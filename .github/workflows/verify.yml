@@ -1,0 +1,55 @@
+name: Evenfall verification
+on:
+  push:
+    branches: [integrations]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: evenfall-verification
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned direct dependencies
+        run: npm install --no-audit --no-fund
+      - name: Core, Mastra, and authorization tests
+        run: npm test
+      - name: Build offline application
+        run: node scripts/build.mjs
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Verify browser preview and offline behavior
+        run: npm run test:browser
+      - name: Preserve preview build and dependency resolution
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evenfall-preview-build
+          path: |
+            dist/
+            package-lock.json
+          retention-days: 7
+      - name: Preserve browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evenfall-browser-evidence
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - name: Explain verification scope
+        if: always()
+        run: |
+          echo '### Evenfall integration preview' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This run builds and tests the app inside GitHub. It does not publish a Pages site or deploy to Render.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Model availability, real Mastra workflow execution with injected inference, authentication, desktop/mobile UI, and offline shell are checked. Live Gemma inference and credentialed sponsor services require separate acceptance checks.' >> "$GITHUB_STEP_SUMMARY"
