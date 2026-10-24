@@ -7,5 +7,9 @@ __pycache__/
 *.pyc
 .DS_Store
 models/
-runtime/
-data/
+runtime/data/
+dist/
+playwright-report/
+test-results/
+.venv/
+*.safetensors
