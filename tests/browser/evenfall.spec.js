@@ -1,0 +1,38 @@
+import {test,expect} from '@playwright/test';
+test('desktop story shelf, ratings, soundscape and offline reload',async({page,context},info)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/');await expect(page.getByRole('heading',{name:'The day is done. Let your evening unfold.'})).toBeVisible();
+  await expect(page.locator('#source')).toHaveText('Original sample');
+  await page.getByRole('button',{name:'Save to my shelf'}).click();
+  await expect(page.locator('#shelf .shelfitem')).toHaveCount(1);
+  await page.getByLabel('Rating for The Lantern Keeper').selectOption('5');
+  await page.getByRole('button',{name:'Choose tonight for me'}).click();
+  await expect(page.locator('#setting')).toHaveValue('garden');
+  await page.getByRole('button',{name:'Play soundscape'}).click();
+  await expect(page.locator('#soundStatus')).toContainText(/playing|until quiet/);
+  await page.getByRole('button',{name:'Stop all audio'}).click();
+  await expect(page.locator('#soundStatus')).toHaveText('Quiet for now.');
+  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download my bedtime pack'}).click();
+  expect((await download).suggestedFilename()).toBe('evenfall-bedtime-pack.json');
+  await page.evaluate(()=>navigator.serviceWorker.ready);
+  await expect.poll(()=>page.evaluate(()=>Boolean(navigator.serviceWorker.controller))).toBe(true);
+  await context.setOffline(true);await page.reload();
+  await expect(page.locator('#connection')).toContainText('Offline');
+  await expect(page.locator('#shelf .shelfitem')).toHaveCount(1);
+  await expect(page.getByLabel('Rating for The Lantern Keeper')).toHaveValue('5');
+  await page.screenshot({path:info.outputPath('evenfall-desktop-offline.png'),fullPage:true});
+  expect(errors).toEqual([]);
+});
+test('mobile layout, model consent gate, and safe pack import',async({page},info)=>{
+  await page.setViewportSize({width:390,height:844});await page.goto('/');
+  await page.getByText('Offline AI setup',{exact:true}).click();
+  await page.getByRole('button',{name:'Download and load Gemma'}).click();
+  await expect(page.getByRole('status')).toContainText('Review the Gemma terms');
+  await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeDisabled();
+  const pack={format:'evenfall-pack',version:1,stories:[{id:'test',title:'<img src=x onerror=alert(1)>',text:'A quiet story '.repeat(30),source:'Imported sample',setting:'garden',mood:'settled',minutes:2,createdAt:new Date().toISOString(),rating:null}]};
+  await page.locator('#import').setInputFiles({name:'pack.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});
+  await expect(page.locator('#shelf .shelfitem')).toHaveCount(1);await expect(page.locator('#shelf img')).toHaveCount(0);
+  await page.getByRole('button',{name:'Read',exact:true}).click();await expect(page.locator('#storyTitle')).toContainText('<img');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:info.outputPath('evenfall-mobile.png'),fullPage:true});
+});
