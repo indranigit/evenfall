@@ -8,12 +8,12 @@ self.onmessage = async ({data}) => {
   try {
     if (data.type === 'load') {
       engine = new MLCEngine({initProgressCallback:p=>self.postMessage({type:'progress',id:data.id,progress:p.progress,text:p.text})});
-      await engine.reload(MODEL, {context_window_size:4096, sliding_window_size:-1});
+      await engine.reload(MODEL, {context_window_size:-1, sliding_window_size:512});
       self.postMessage({type:'ready',id:data.id});
     } else if (data.type === 'generate') {
       if (!engine) throw Error('Load Gemma first.');
       const started = performance.now();
-      const stream = await engine.chat.completions.create({messages:[{role:'user',content:storyPrompt(data.preferences,data.previous)}],temperature:.65,top_p:.9,repetition_penalty:1.1,max_tokens:Math.min(1600,Number(data.preferences.minutes)*180+160),stream:true,stream_options:{include_usage:true}});
+      const stream = await engine.chat.completions.create({messages:[{role:'user',content:storyPrompt(data.preferences,data.previous)}],temperature:.4,top_p:.8,repetition_penalty:1.05,max_tokens:Math.min(1600,Number(data.preferences.minutes)*180+160),stream:true,stream_options:{include_usage:true}});
       let text = '', usage, finishReason;
       for await (const chunk of stream) {
         if (cancelled) break;
