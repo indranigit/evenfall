@@ -43,7 +43,22 @@ async function narrate(){if(!cloudVoices.length)throw Error('Connect an ElevenLa
 action('narrate',narrate);
 action('sync',async()=>{await api('shelf',{stories:shelf});status('Shelf saved to your connected account.');});
 action('restore',async()=>{const result=await api('shelf');const rows=parseShelf(JSON.stringify(result.stories));const ids=new Set(rows.map(x=>x.id));shelf=[...rows,...shelf.filter(x=>!ids.has(x.id))].slice(0,40);persist();renderShelf();status('Cloud shelf restored.');});
-action('search',async()=>{const result=await api('inspiration',{place:$('inspiration').value});$('sources').replaceChildren();for(const source of result.sources){let url;try{url=new URL(source.url);}catch{continue;}if(url.protocol!=='https:')continue;const p=document.createElement('p');const a=document.createElement('a');a.href=url.href;a.rel='noopener noreferrer';a.target='_blank';a.textContent=source.title;p.append(a);$('sources').append(p);}status('Sources found. Open a source to explore it before using it as inspiration.');});
+const inspirationCacheKey='evenfall-inspiration-v1';
+function renderSources(result){
+  $('sources').replaceChildren();
+  const heading=document.createElement('p');heading.textContent='Nature inspiration for '+result.place+' · '+new Date(result.fetchedAt).toLocaleDateString();$('sources').append(heading);
+  for(const source of result.sources){let url;try{url=new URL(source.url);}catch{continue;}if(url.protocol!=='https:'||url.username||url.password)continue;const p=document.createElement('p'),a=document.createElement('a');a.href=url.href;a.rel='noopener noreferrer';a.target='_blank';a.textContent=source.title;p.append(a);if(source.snippet){const summary=document.createElement('span');summary.textContent=' — '+source.snippet;p.append(summary);}$('sources').append(p);}
+}
+action('search',async()=>{
+  const place=$('inspiration').value.trim().replace(/\s+/g,' '),key=place.toLowerCase();
+  if(place.length<2||place.length>100)throw Error('Enter a place between 2 and 100 characters.');
+  let cached=[];try{const parsed=JSON.parse(localStorage.getItem(inspirationCacheKey)||'[]');if(Array.isArray(parsed))cached=parsed.slice(0,10);}catch{}
+  const saved=cached.find(x=>x.key===key&&Array.isArray(x.result?.sources));
+  if(!navigator.onLine){if(!saved)throw Error('Search needs internet. Search this place online first; Gemma stories still work offline.');renderSources(saved.result);status('Saved SerpApi inspiration · available offline. Source websites need internet.');return;}
+  if(saved&&Date.now()-Date.parse(saved.result.fetchedAt)<3600000){renderSources(saved.result);status('Saved SerpApi results reused without spending a search.');return;}
+  $('search').disabled=true;try{status('Finding peaceful nature inspiration with SerpApi…');const result=await api('inspiration',{place});renderSources(result);let stored=true;try{localStorage.setItem(inspirationCacheKey,JSON.stringify([{key,result},...cached.filter(x=>x.key!==key)].slice(0,10)));}catch{stored=false;}status(result.sources.length?(stored?'SerpApi inspiration saved for offline reading. Explore the sources for your next story.':'Sources found. Browser storage is unavailable; these results are not saved offline.'):'No sources found. Try another place.');}finally{$('search').disabled=!connectedCaps.serpapi&&!saved;}
+});
+try{const cached=JSON.parse(localStorage.getItem(inspirationCacheKey)||'[]');if(Array.isArray(cached)&&cached[0]?.result?.sources?.length){$('inspiration').value=cached[0].result.place;renderSources(cached[0].result);$('search').disabled=false;}}catch{}
 let packJob;
 action('durable',async()=>{if(!packJob){const result=await api('packs',{preferences:prefs()});packJob=result.id;$('durable').textContent='Check prepared pack';status('Temporal is preparing your stories. You can check back here.');}else{const result=await api('packs/'+encodeURIComponent(packJob));if(!result.stories){status('Your pack is still preparing.');return;}for(const story of result.stories)save(story);packJob=null;$('durable').textContent='Prepare with Temporal';status('Your prepared stories are on the shelf.');}});
 function connection(){$('connection').textContent=navigator.onLine?'Your quiet corner':'Offline · your quiet corner';}addEventListener('online',connection);addEventListener('offline',connection);
