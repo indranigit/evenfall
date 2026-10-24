@@ -8,7 +8,7 @@ self.onmessage = async ({data}) => {
   try {
     if (data.type === 'load') {
       engine = new MLCEngine({initProgressCallback:p=>self.postMessage({type:'progress',id:data.id,progress:p.progress,text:p.text})});
-      await engine.reload(MODEL);
+      await engine.reload(MODEL, {context_window_size:4096, sliding_window_size:-1});
       self.postMessage({type:'ready',id:data.id});
     } else if (data.type === 'generate') {
       if (!engine) throw Error('Load Gemma first.');
