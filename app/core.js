@@ -34,3 +34,31 @@ export function makeStory(text, input, source = MODEL) {
     ...preferences(input), source, createdAt:new Date().toISOString(), rating:null};
 }
 export function parseShelf(raw) {
+  try { const rows = JSON.parse(raw || '[]'); return Array.isArray(rows) ? rows.filter(x =>
+    x && typeof x.id === 'string' && typeof x.text === 'string' && x.text.length <= 18000 &&
+    typeof x.title === 'string').slice(0,40) : []; } catch { return []; }
+}
+export function chooseRoutine(rows) {
+  const rated = rows.filter(x => Number.isInteger(x.rating) && x.rating >= 1 && x.rating <= 5);
+  if (!rated.length) return {...preferences(), reason:'A gentle starting point. Rate a few stories to personalize your routine.', method:'default'};
+  const scores = SETTINGS.map(setting => {
+    const matches = rated.filter(x => x.setting === setting);
+    return {setting, score:(matches.reduce((n,x)=>n+x.rating,0)+6)/(matches.length+2), count:matches.length};
+  }).sort((a,b)=>b.score-a.score);
+  const best = rated.filter(x => x.setting === scores[0].setting).sort((a,b)=>b.rating-a.rating)[0];
+  return {...preferences(best), reason:'Based on your saved story ratings; this is a simple preference baseline, not TabPFN.', method:'rating-average'};
+}
+export function metrics(text, elapsedMs, source) {
+  return {source, words:String(text).trim().split(/\s+/).length, elapsedMs:Math.round(elapsedMs), recordedAt:new Date().toISOString()};
+}
+export function exportPack(stories) {
+  return JSON.stringify({format:'evenfall-pack',version:1,createdAt:new Date().toISOString(),stories}, null, 2);
+}
+export function importPack(raw) {
+  if (raw.length > 1000000) throw new Error('This pack is too large.');
+  const pack = JSON.parse(raw);
+  if (pack.format !== 'evenfall-pack' || pack.version !== 1 || !Array.isArray(pack.stories)) throw new Error('Choose an Evenfall bedtime pack.');
+  const rows = parseShelf(JSON.stringify(pack.stories));
+  if (!rows.length) throw new Error('This pack has no readable stories.');
+  return rows.map(row => ({...row, id:crypto.randomUUID()}));
+}
