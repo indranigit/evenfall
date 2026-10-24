@@ -1,8 +1,8 @@
 import {createServer} from 'node:http';
 import {timingSafeEqual,createHash,randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {createRemoteJWKSet,jwtVerify} from 'jose';
-import * as services from './services.mjs';
+import {createRemoteJWKSet,jwtVerify} from 'jose';import * as services from './services.mjs';
+import {routineAvailable,predictRoutine} from './routine.mjs';
 const env=process.env;
 const issuer=env.AUTH0_ISSUER;
 const jwks=issuer?createRemoteJWKSet(new URL('.well-known/jwks.json',issuer.endsWith('/')?issuer:issuer+'/')):null;
@@ -25,17 +25,18 @@ export function createApp(){return createServer(async(req,res)=>{
     const path=new URL(req.url,'http://localhost').pathname;
     if(path==='/health'&&req.method==='GET'){send(200,{ok:true});return;}
     let user;try{user=await authorize(req);}catch(error){if(error instanceof services.ServiceError)throw error;throw new services.ServiceError('Invalid or expired access token.',401);}
-    if(req.method==='GET'&&path==='/api/capabilities'){send(200,services.capabilities());return;}
+    if(req.method==='GET'&&path==='/api/capabilities'){send(200,{...services.capabilities(),tabpfn:routineAvailable()});return;}
     if(req.method==='GET'&&path==='/api/voices'){send(200,{voices:await services.voices()});return;}
     if(req.method==='GET'&&path==='/api/shelf'){send(200,await services.readShelf(user));return;}
     if(req.method==='GET'&&path.startsWith('/api/packs/')){const id=decodeURIComponent(path.slice(11));if(!id.startsWith(ownerPrefix(user)))throw new services.ServiceError('Pack not found.',404);const handle=(await temporalClient()).workflow.getHandle(id);const info=await handle.describe();if(info.status.name==='COMPLETED')send(200,{stories:await handle.result()});else if(['FAILED','CANCELED','TERMINATED','TIMED_OUT'].includes(info.status.name))throw new services.ServiceError('This pack stopped before completion. Start a new pack.',422);else send(200,{status:info.status.name});return;}
     if(req.method!=='POST')throw new services.ServiceError('Not found.',404);
-    if(!['/api/story','/api/narrate','/api/inspiration','/api/shelf','/api/packs'].includes(path))throw new services.ServiceError('Not found.',404);
+    if(!['/api/story','/api/narrate','/api/inspiration','/api/shelf','/api/packs','/api/routine'].includes(path))throw new services.ServiceError('Not found.',404);
     if(!String(req.headers['content-type']).includes('application/json'))throw new services.ServiceError('Send JSON.',415);
-    const input=await body(req);limit(user,path);
+    const input=await body(req);if(!input||typeof input!=='object'||Array.isArray(input))throw new services.ServiceError('Send a JSON object.',400);limit(user,path);
     if(path==='/api/story')send(200,await services.story(input.preferences));
     else if(path==='/api/narrate'){const audio=await services.narration(input.text,input.voice);res.writeHead(200,{'Content-Type':'audio/mpeg'});res.end(audio);}
     else if(path==='/api/inspiration')send(200,await services.inspiration(input.place));
+    else if(path==='/api/routine')send(200,await predictRoutine(input));
     else if(path==='/api/shelf')send(200,await services.saveShelf(user,input.stories));
     else if(path==='/api/packs'){const id=ownerPrefix(user)+randomUUID();await (await temporalClient()).workflow.start('bedtimePack',{taskQueue:'evenfall',workflowId:id,args:[input.preferences],workflowExecutionTimeout:'30 minutes'});send(202,{id});}
   }catch(error){send(error.status||500,{error:error instanceof services.ServiceError?error.message:'The request could not complete. Check service configuration.'});}
