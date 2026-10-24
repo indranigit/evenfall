@@ -20,7 +20,32 @@ export async function story(input){const run=await workflow.createRun();const re
 let cachedVoices;
 export async function voices(){if(!capabilities().elevenlabs)throw new ServiceError('ElevenLabs is not enabled.');if(cachedVoices)return cachedVoices;const data=await (await request('https://api.elevenlabs.io/v1/voices',{headers:{'xi-api-key':env.ELEVENLABS_API_KEY}})).json();cachedVoices=(data.voices||[]).filter(v=>v.category==='premade').slice(0,3).map(v=>({id:v.voice_id,name:v.name}));if(!cachedVoices.length)throw new ServiceError('No standard voices are available on this account.');return cachedVoices;}
 export async function narration(text,voice){if(typeof text!=='string'||text.length<20||text.length>6000)throw new ServiceError('Narration accepts 20 to 6000 characters.',400);const list=await voices();if(!list.some(v=>v.id===voice))throw new ServiceError('Choose an available narration voice.',400);return Sentry.startSpan({name:'Evenfall narration',op:'gen_ai.invoke_agent',attributes:{'gen_ai.provider.name':'elevenlabs','input.characters':text.length}},async()=>{const response=await request('https://api.elevenlabs.io/v1/text-to-speech/'+encodeURIComponent(voice)+'?output_format=mp3_44100_128',{method:'POST',headers:{'xi-api-key':env.ELEVENLABS_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({text,model_id:'eleven_multilingual_v2',voice_settings:{stability:.7,similarity_boost:.65,speed:.85}})});return Buffer.from(await response.arrayBuffer());});}
-export async function inspiration(place){if(!capabilities().serpapi)throw new ServiceError('SerpApi is not enabled.');if(typeof place!=='string'||place.length<2||place.length>100)throw new ServiceError('Enter a place between 2 and 100 characters.',400);const url=new URL('https://serpapi.com/search.json');url.search=new URLSearchParams({engine:'google',q:place+' garden nature history',api_key:env.SERPAPI_KEY,num:'5'}).toString();const result=await (await request(url)).json();if(result.error)throw new ServiceError('Search could not complete.');return {sources:(result.organic_results||[]).slice(0,5).map(x=>({title:String(x.title),url:String(x.link)}))};}
+const searchCache=new Map();
+export async function inspiration(place){
+  if(!capabilities().serpapi)throw new ServiceError('SerpApi is not enabled.');
+  if(typeof place!=='string')throw new ServiceError('Enter a place between 2 and 100 characters.',400);
+  place=place.trim().replace(/\s+/g,' ');
+  if(place.length<2||place.length>100)throw new ServiceError('Enter a place between 2 and 100 characters.',400);
+  const key=place.toLowerCase(),cached=searchCache.get(key);
+  if(cached&&Date.now()-cached.time<3600000)return {...cached.data,cached:true};
+  const url=new URL('https://serpapi.com/search.json');
+  url.search=new URLSearchParams({engine:'google',q:place+' garden nature history',api_key:env.SERPAPI_KEY,hl:'en',num:'5'}).toString();
+  let response;try{response=await fetch(url,{signal:AbortSignal.timeout(30000)});}catch{throw new ServiceError('Search is temporarily unavailable. Your offline storyteller still works.',502);}
+  if(response.status===429)throw new ServiceError('The SerpApi search allowance is temporarily unavailable. Try later; offline stories still work.',429);
+  if(!response.ok)throw new ServiceError('Search could not complete. Check the SerpApi account configuration.',502);
+  let result;try{result=await response.json();}catch{throw new ServiceError('Search returned an unreadable response.',502);}
+  if(result.error)throw new ServiceError('Search could not complete. Check the SerpApi account allowance.',502);
+  const sources=[];
+  for(const item of (Array.isArray(result.organic_results)?result.organic_results:[]).slice(0,10)){
+    let link;try{link=new URL(item.link);}catch{continue;}
+    if(link.protocol!=='https:'||link.username||link.password||!item.title)continue;
+    sources.push({title:String(item.title).slice(0,200),url:link.href,snippet:String(item.snippet||'').slice(0,400)});
+    if(sources.length===5)break;
+  }
+  const data={place,sources,fetchedAt:new Date().toISOString(),cached:false};
+  if(searchCache.size>=50)searchCache.delete(searchCache.keys().next().value);
+  searchCache.set(key,{time:Date.now(),data});return data;
+}
 let collection;
 async function shelfCollection(){if(!capabilities().mongodb)throw new ServiceError('Atlas sync is not enabled.');if(!collection){const {MongoClient}=await import('mongodb');const client=new MongoClient(env.MONGODB_URI,{serverSelectionTimeoutMS:10000});await client.connect();collection=client.db('evenfall').collection('shelves');}return collection;}
 const rowSchema=z.object({id:z.string().max(80),title:z.string().max(100),text:z.string().min(120).max(18000),setting:z.enum(['woodland','seaside','garden']),mood:z.enum(['settled','restless','tired']),minutes:z.number(),character:z.string().max(40).optional(),source:z.string().max(100),createdAt:z.string().max(50),rating:z.number().int().min(1).max(5).nullable()});
