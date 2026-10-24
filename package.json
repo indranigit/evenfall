@@ -1,0 +1,33 @@
+{
+  "name": "evenfall",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "vite app --host 127.0.0.1",
+    "build": "vite build app --base=./ --outDir ../dist",
+    "preview": "vite preview app --outDir ../dist --host 127.0.0.1 --port 4173",
+    "start": "node server/index.mjs",
+    "test": "node --test tests/core.test.mjs",
+    "test:browser": "playwright test",
+    "worker": "node server/worker.mjs"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "0.2.86",
+    "@mastra/core": "1.79.0",
+    "@sentry/node": "11.9.0",
+    "@temporalio/client": "1.24.0",
+    "@temporalio/worker": "1.24.0",
+    "@temporalio/workflow": "1.24.0",
+    "mongodb": "7.7.0",
+    "jose": "6.2.13",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "vite": "8.3.5",
+    "@playwright/test": "1.64.1"
+  }
+}
