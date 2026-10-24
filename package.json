@@ -8,10 +8,10 @@
   },
   "scripts": {
     "dev": "vite app --host 127.0.0.1",
-    "build": "vite build app --base=./ --outDir ../dist",
+    "build": "node scripts/build.mjs",
     "preview": "vite preview app --outDir ../dist --host 127.0.0.1 --port 4173",
     "start": "node server/index.mjs",
-    "test": "node --test tests/core.test.mjs",
+    "test": "node --test tests/*.test.mjs && python3 -m unittest discover -s tests -p '*_test.py'",
     "test:browser": "playwright test",
     "worker": "node server/worker.mjs"
   },
@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "vite": "8.3.5",
+    "@temporalio/testing": "1.24.0",
     "@playwright/test": "1.64.1"
   }
 }
