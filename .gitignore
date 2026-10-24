@@ -1,0 +1,11 @@
+# Keep secrets and local runtime files out of this repository.
+.env
+.env.*
+!.env.example
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+models/
+runtime/
+data/
